@@ -1,0 +1,303 @@
+openapi: 3.0.3
+info:
+  title: PaaS Pesquisa Psicossocial NR-01
+  version: 0.1.0
+  description: API multi-tenant para criação, aplicação e análise de pesquisas psicossociais (NR-01).
+servers:
+  - url: https://api.seudominio.com
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Tenants
+  - name: Templates
+  - name: Surveys
+  - name: Responses
+  - name: Reports
+  - name: Admin
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TenantHeader:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      description: Identificador do Tenant (quando não há resolução por subdomínio).
+      schema:
+        type: string
+  schemas:
+    Tenant:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        subdomain: { type: string }
+        plan: { type: string }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role: { type: string }
+    Template:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        version: { type: integer }
+        isActive: { type: boolean }
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
+    Section:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        weight: { type: number }
+        position: { type: integer }
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Question'
+    Question:
+      type: object
+      properties:
+        id: { type: string }
+        text: { type: string }
+        type: { type: string, enum: [multiple_choice, multi_select, likert, text] }
+        weight: { type: number }
+        position: { type: integer }
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/Option'
+    Option:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        score: { type: number }
+        position: { type: integer }
+    SurveyInstance:
+      type: object
+      properties:
+        id: { type: string }
+        templateId: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [draft, open, closed, scored, reported] }
+        opensAt: { type: string, format: date-time }
+        closesAt: { type: string, format: date-time }
+    Assignment:
+      type: object
+      properties:
+        id: { type: string }
+        surveyId: { type: string }
+        respondentId: { type: string, nullable: true }
+        externalEmail: { type: string, nullable: true }
+        token: { type: string, format: uuid }
+        status: { type: string, enum: [pending, started, submitted] }
+    Response:
+      type: object
+      properties:
+        id: { type: string }
+        surveyId: { type: string }
+        assignmentId: { type: string }
+        questionId: { type: string }
+        optionId: { type: string, nullable: true }
+        valueText: { type: string, nullable: true }
+        numericValue: { type: number, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Score:
+      type: object
+      properties:
+        scope: { type: string, enum: [question, section, overall] }
+        targetId: { type: string, nullable: true }
+        score: { type: number }
+        riskLevel: { type: string, nullable: true }
+        computedAt: { type: string, format: date-time }
+    Report:
+      type: object
+      properties:
+        id: { type: string }
+        surveyId: { type: string }
+        type: { type: string, enum: [analytic, synthetic] }
+        url: { type: string }
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Autentica e retorna JWT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+  /tenants:
+    get:
+      tags: [Tenants]
+      summary: Lista tenants (superadmin).
+      responses: { '200': { description: OK } }
+  /templates:
+    get:
+      tags: [Templates]
+      summary: Lista templates do tenant.
+      parameters: [ { $ref: '#/components/parameters/TenantHeader' } ]
+      responses: { '200': { description: OK } }
+    post:
+      tags: [Templates]
+      summary: Cria template.
+      parameters: [ { $ref: '#/components/parameters/TenantHeader' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Template' }
+      responses: { '201': { description: Created } }
+  /templates/{id}:
+    get:
+      tags: [Templates]
+      summary: Detalha template.
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses: { '200': { description: OK } }
+  /templates/{id}/sections:
+    post:
+      tags: [Templates]
+      summary: Adiciona seção ao template.
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Section' }
+      responses: { '201': { description: Created } }
+  /surveys:
+    post:
+      tags: [Surveys]
+      summary: Cria instância de pesquisa a partir de um template.
+      parameters: [ { $ref: '#/components/parameters/TenantHeader' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                templateId: { type: string }
+                title: { type: string }
+                opensAt: { type: string, format: date-time }
+                closesAt: { type: string, format: date-time }
+      responses: { '201': { description: Created } }
+  /surveys/{id}/assignments:
+    post:
+      tags: [Surveys]
+      summary: Cria assignments (interno/externo).
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                respondents:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      respondentId: { type: string, nullable: true }
+                      externalEmail: { type: string, nullable: true }
+      responses: { '201': { description: Created } }
+  /assignments/{token}/responses:
+    post:
+      tags: [Responses]
+      summary: Registra respostas de um respondente (token).
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      questionId: { type: string }
+                      optionId: { type: string, nullable: true }
+                      valueText: { type: string, nullable: true }
+                      numericValue: { type: number, nullable: true }
+      responses: { '201': { description: Created } }
+  /surveys/{id}/close:
+    post:
+      tags: [Surveys]
+      summary: Encerra coleta e dispara scoring.
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses: { '202': { description: Accepted } }
+  /surveys/{id}/reports/{type}:
+    get:
+      tags: [Reports]
+      summary: Retorna link assinado do relatório (analytic|synthetic).
+      parameters:
+        - { $ref: '#/components/parameters/TenantHeader' }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: type
+          in: path
+          required: true
+          schema: { type: string, enum: [analytic, synthetic] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
